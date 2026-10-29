@@ -18,8 +18,10 @@ also holds.
 
 The script checks (i) the bound for random models and several perturbation sizes,
 (ii) that the exactly intertwining case gives TV = 0 to machine precision, (iii) the block
-form, and (iv) reports, without any bound being claimed, what happens when the fine model
-starts from a single configuration of the fibre instead of the uniform superposition.
+form, together with its sharper form eps_k <= (a^2 + b^2)^{1/2} (the two terms have
+orthogonal ranges), (iv) the bound for a fine model that starts from a single configuration
+of the fibre of x_i (size m), TV <= sum_k eps_k + (1 - 1/m)^{1/2}, and (v) creation and
+refinement together, with rho: X' -> X u {new} and arbitrary categories on the new points.
 """
 import numpy as np
 
@@ -98,7 +100,9 @@ def run_case(fibres, cats, rec_epochs, kappa, n_steps, delta, x_init=0):
         ws.append(w)
         ws_fine.append(w_fine)
         eps.append(opnorm(w_fine @ iota - iota @ w))
-        eps_block.append(opnorm(iota.conj().T @ w_fine @ iota - w) + opnorm(p_perp @ w_fine @ iota))
+        a_ = opnorm(iota.conj().T @ w_fine @ iota - w)
+        b_ = opnorm(p_perp @ w_fine @ iota)
+        eps_block.append(np.sqrt(a_ ** 2 + b_ ** 2))
     rho0 = np.zeros((n, n), dtype=complex)
     rho0[x_init, x_init] = 1.0
     psi0 = iota[:, x_init]
@@ -111,7 +115,9 @@ def run_case(fibres, cats, rec_epochs, kappa, n_steps, delta, x_init=0):
     e[int(np.argmax(np.abs(iota[:, x_init])))] = 1.0
     p_single = np.real(np.diag(evolve(ws_fine, np.outer(e, e.conj()), rec_epochs, kappa, cats_fine)))
     tv_single = tv(pushforward(p_single, rho, n), p_coarse)
-    return tv_push, float(sum(eps)), float(sum(eps_block)), tv_single
+    m = fibres[x_init]
+    single_bound = float(sum(eps)) + np.sqrt(1.0 - 1.0 / m)
+    return tv_push, float(sum(eps)), float(sum(eps_block)), tv_single, single_bound
 
 
 def main():
@@ -123,14 +129,14 @@ def main():
     ok = True
     print("fibres", fibres, "categories", cats, "recorded epochs", sorted(rec_epochs), "kappa", kappa, "steps", n_steps)
     head = "TV(rho_*P',P)"
-    print(f"{'delta':>7} {head:>16} {'sum eps':>10} {'sum block':>10} {'TV single':>10}")
+    print(f"{'delta':>7} {head:>16} {'sum eps':>10} {'sum block':>10} {'TV single':>10} {'bound':>10}")
     for delta in [0.0, 0.02, 0.1, 0.3, 1.0]:
-        tv_push, s_eps, s_block, tv_single = run_case(fibres, cats, rec_epochs, kappa, n_steps, delta)
-        flag = tv_push <= s_eps + 1e-12 and s_eps <= s_block + 1e-12
+        tv_push, s_eps, s_block, tv_single, single_bound = run_case(fibres, cats, rec_epochs, kappa, n_steps, delta)
+        flag = tv_push <= s_eps + 1e-12 and s_eps <= s_block + 1e-12 and tv_single <= single_bound + 1e-12
         ok = ok and flag
         if delta == 0.0:
             ok = ok and tv_push < 1e-12
-        print(f"{delta:7.3f} {tv_push:16.3e} {s_eps:10.3e} {s_block:10.3e} {tv_single:10.3e} {'ok' if flag else 'VIOLATION'}")
+        print(f"{delta:7.3f} {tv_push:16.3e} {s_eps:10.3e} {s_block:10.3e} {tv_single:10.3e} {single_bound:10.3e} {'ok' if flag else 'VIOLATION'}")
     # random fibre structures and resolutions
     viol = 0
     trials = 200
@@ -142,11 +148,52 @@ def main():
         rec = {k for k in range(1, steps + 1) if rng.random() < 0.5}
         kap = float(rng.random())
         dl = float(rng.choice([0.0, 0.05, 0.2, 0.6]))
-        tv_push, s_eps, s_block, _ = run_case(fib, cat, rec, kap, steps, dl, x_init=int(rng.integers(0, n)))
-        if tv_push > s_eps + 1e-12 or s_eps > s_block + 1e-12:
+        tv_push, s_eps, s_block, tv_single, single_bound = run_case(fib, cat, rec, kap, steps, dl, x_init=int(rng.integers(0, n)))
+        if tv_push > s_eps + 1e-12 or s_eps > s_block + 1e-12 or tv_single > single_bound + 1e-12:
             viol += 1
     print(f"random trials: {trials}, violations: {viol}")
     ok = ok and viol == 0
+    # creation and refinement together: rho maps X' onto X u {new}; new points get arbitrary categories
+    viol2 = 0
+    trials2 = 200
+    for _ in range(trials2):
+        n = int(rng.integers(2, 4))
+        fib = [int(rng.integers(1, 4)) for _ in range(n)]
+        n_new = int(rng.integers(1, 4))
+        cat = [int(rng.integers(0, 2)) for _ in range(n)]
+        cat_new = [int(rng.integers(0, 3)) for _ in range(n_new)]
+        steps = int(rng.integers(1, 5))
+        rec = {k for k in range(1, steps + 1) if rng.random() < 0.5}
+        kap = float(rng.random())
+        dl = float(rng.choice([0.0, 0.05, 0.2]))
+        iota, rho = embedding(fib)
+        nprime = iota.shape[0] + n_new
+        iota_full = np.zeros((nprime, n), dtype=complex)
+        iota_full[: iota.shape[0], :] = iota
+        cats_fine = np.array(list(np.asarray(cat)[rho]) + cat_new)
+        p_perp = np.eye(nprime) - iota_full @ iota_full.conj().T
+        ws, ws_fine, eps = [], [], []
+        for _k in range(steps):
+            w = haar(n)
+            v = haar(nprime)
+            w0 = iota_full @ w @ iota_full.conj().T + p_perp @ v @ p_perp
+            g = rng.normal(size=(nprime, nprime)) + 1j * rng.normal(size=(nprime, nprime))
+            wf = polar_unitary(w0 + dl * g / np.sqrt(nprime))
+            ws.append(w); ws_fine.append(wf); eps.append(opnorm(wf @ iota_full - iota_full @ w))
+        x0 = int(rng.integers(0, n))
+        rho0 = np.zeros((n, n), dtype=complex); rho0[x0, x0] = 1.0
+        psi0 = iota_full[:, x0]
+        p_coarse = np.real(np.diag(evolve(ws, rho0, rec, kap, np.asarray(cat))))
+        p_fine = np.real(np.diag(evolve(ws_fine, np.outer(psi0, psi0.conj()), rec, kap, cats_fine)))
+        pushed = np.zeros(n)
+        for x_prime, x in enumerate(rho):
+            pushed[x] += p_fine[x_prime]
+        # mass on the new points stays as a defect: compare with P_kappa extended by zero
+        tv_val = 0.5 * (np.abs(pushed - p_coarse).sum() + p_fine[iota.shape[0]:].sum())
+        if tv_val > sum(eps) + 1e-12:
+            viol2 += 1
+    print(f"creation+refinement trials: {trials2}, violations: {viol2}")
+    ok = ok and viol2 == 0
     print("ALL PASS" if ok else "FAIL")
 
 
