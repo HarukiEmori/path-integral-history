@@ -38,6 +38,7 @@ Every script exits with code 0 when all checks pass; the printed maximum discrep
   python -I empirical/reformation_chain.py /path/to/Printing_ReStat.tab
   ```
   The script prints the number of cities on each course (coded Protestant or not in 1530, 1560, 1600), the transition frequencies, Fisher's exact tests of the Markov property and of double stochasticity, the shares of Protestant cities with and without a printing press by 1500, the territories and present-day countries of the cities, and percentile intervals when territories or countries are resampled in place of cities (200,000 draws, fixed seed; the cities are not independent observations).
+  It repeats the counts, tests and intervals for the 753 cities that the article analyses (the selection is checked against the means of Table 1 of the article), and it reproduces the estimation samples of the article (200, 352 and 307 cities for 1530, 1560 and 1600) with the shares of Protestant cities with and without a press in each. These are the numbers of Secs. 9.2 and 9.5 of the manuscript.
 - `pottery_latitude.py`: a toy application of Proposition 9 to recorded technical choices (after S. E. van der Leeuw, "Giving the potter a choice", 1993): variable elements of a pottery tradition as factors, archaeological visibility as local overlaps kappa_i, and the latitude of the valuation of the potter. The parameters are illustrative and are not estimated from data.
 
 ## Emulation (`emulation/`)

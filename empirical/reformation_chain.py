@@ -22,7 +22,15 @@ The script only counts.  It prints
   (7) the courses by present-day country (variable currcountry, with the three Italian regions of
       the file counted as one country): the countries all of whose cities share one course, the
       countries that hold the changes of each step, and the intervals of (6) when the countries
-      are resampled in place of the territories.
+      are resampled in place of the territories,
+  (8) the same counts, tests and intervals for the 753 cities that the published article analyses
+      (the rows with a recorded population in 1500, without Mainz, Wittenberg and Zurich, from
+      which the article measures distances); the selection is checked against the means of
+      Table 1 of the article,
+  (9) the estimation samples of the article (Tables 6 and 7: 200, 352 and 307 cities in 102, 157
+      and 147 territories for 1530, 1560 and 1600), obtained from the 753 cities by leaving out
+      every nation or Imperial Circle of the file whose cities all have the same code at the
+      date, and the shares of Protestant cities with and without a press in each.
 Run:  python -I reformation_chain.py /path/to/Printing_ReStat.tab
 """
 import collections
@@ -33,15 +41,89 @@ import sys
 import numpy as np
 from scipy.stats import fisher_exact
 
+LABELS = ("M(1|0) - M(0|1), 1530 -> 1560", "M(1|0) - M(0|1), 1560 -> 1600",
+          "share staying Protestant to 1600: Protestant since 1530 minus changed after 1530")
+NATIONS = ("scotdum", "engdum", "iredum", "denmarkdum", "findum", "swededum", "nordum", "frandum", "prusdum",
+           "italiandum", "italianhre", "poldum", "portdum", "espdum", "belghredum", "nethdum", "switzdum")
+CIRCLES = ("electorate", "upperrhencirc", "lowersaxoncirc", "swabiancirc", "franccirc", "westphalcirc",
+           "bavariancirc", "bohemiancirc", "austriancirc", "burgcirc")
+
+
+def g(r, c):
+    return int(float(r[c]))
+
+
+def course(r):
+    return (g(r, "prot1530"), g(r, "prot1560"), g(r, "prot1600"))
+
+
+def country(r):
+    name = r["currcountry"].strip('"').strip()
+    return "Italy" if name.endswith("Italy") else name
+
+
+def territory_units(rows):
+    """The cities grouped by territory; a city without a territory in the data is its own unit."""
+    units = collections.defaultdict(list)
+    for i, r in enumerate(rows):
+        name = r["territory"].strip('"').strip()
+        units[name if name else f"(no territory) {i}"].append(course(r))
+    return units
+
+
+def country_units(rows):
+    units = collections.defaultdict(list)
+    for r in rows:
+        units[country(r)].append(course(r))
+    return units
+
+
+def course_table(groups):
+    """One row per unit: the number of its cities on each of the eight courses (index 4a + 2b + c)."""
+    keys_ = sorted(groups)
+    tab = np.zeros((len(keys_), 8))
+    for i, k in enumerate(keys_):
+        for c3 in groups[k]:
+            tab[i, 4 * c3[0] + 2 * c3[1] + c3[2]] += 1
+    return tab
+
+
+def diffs(counts):
+    """counts[..., 8] -> the three differences used in (3) and (4)."""
+    def n(a=None, b=None, c=None):
+        return sum(counts[..., 4 * x + 2 * y + z] for x in (0, 1) for y in (0, 1) for z in (0, 1)
+                   if (a is None or x == a) and (b is None or y == b) and (c is None or z == c))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        d2 = n(0, 1) / n(0) - n(1, 0) / n(1)
+        d3 = n(None, 0, 1) / n(None, 0) - n(None, 1, 0) / n(None, 1)
+        mk = n(1, 1, 1) / n(1, 1) - n(0, 1, 1) / n(0, 1)
+    return np.stack([d2, d3, mk], axis=-1)
+
+
+def resample(tab, draws=200000, seed=20261123):
+    """Percentile intervals when the units are resampled with replacement (multinomial weights)."""
+    rng = np.random.default_rng(seed)
+    m = tab.shape[0]
+    out = []
+    for _ in range(draws // 10000):
+        w = rng.multinomial(m, np.ones(m) / m, size=10000).astype(float)
+        out.append(diffs(w @ tab))
+    out = np.concatenate(out)
+    return [np.percentile(col[np.isfinite(col)], [2.5, 97.5]) for col in out.T]
+
+
+def press_shares(rows, col="prot1600"):
+    out = []
+    for pr in (1, 0):
+        s = [r for r in rows if g(r, "press") == pr]
+        out.append((sum(g(r, col) for r in s), len(s)))
+    return out
+
 
 def main(path):
     rows = list(csv.DictReader(open(path, encoding="utf-8"), delimiter="\t"))
-    g = lambda r, c: int(float(r[c]))
     n = len(rows)
-    cnt = {}
-    for r in rows:
-        k = (g(r, "prot1530"), g(r, "prot1560"), g(r, "prot1600"))
-        cnt[k] = cnt.get(k, 0) + 1
+    cnt = collections.Counter(course(r) for r in rows)
     c = lambda a, b, d: cnt.get((a, b, d), 0)
     print(f"cities: {n}")
     print("(1) courses (x1530, x1560, x1600): number of cities")
@@ -93,70 +175,26 @@ def main(path):
     for y, col in ((1530, "prot1530"), (1560, "prot1560"), (1600, "prot1600")):
         k = sum(g(r, col) for r in rows)
         print(f"    {y}: {k}/{n} = {k / n:.4f}")
-    for pr in (1, 0):
-        s = [r for r in rows if g(r, "press") == pr]
-        k = sum(g(r, "prot1600") for r in s)
-        print(f"    press by 1500 = {pr}: Protestant in 1600: {k}/{len(s)} = {k / len(s):.4f}")
+    for pr, (k, m) in zip((1, 0), press_shares(rows)):
+        print(f"    press by 1500 = {pr}: Protestant in 1600: {k}/{m} = {k / m:.4f}")
 
     print("(6) territories and resampling of territories")
-    units = collections.defaultdict(list)
-    for i, r in enumerate(rows):
-        name = r["territory"].strip('"').strip()
-        key = name if name else f"(no territory) {i}"
-        units[key].append((g(r, "prot1530"), g(r, "prot1560"), g(r, "prot1600")))
+    units = territory_units(rows)
     named = [k for k in units if not k.startswith("(no territory)")]
     print(f"    territories named in the data: {len(named)}; cities without a territory: {len(units) - len(named)}; units: {len(units)}")
     sizes = sorted((len(v) for v in units.values()), reverse=True)
     print(f"    largest units: {sizes[:6]}; units with one city: {sum(1 for x in sizes if x == 1)}")
-
-    def course_table(groups):
-        """One row per unit: the number of its cities on each of the eight courses (index 4a + 2b + c)."""
-        keys_ = sorted(groups)
-        tab = np.zeros((len(keys_), 8))
-        for i, k in enumerate(keys_):
-            for c3 in groups[k]:
-                tab[i, 4 * c3[0] + 2 * c3[1] + c3[2]] += 1
-        return tab
-
-    def diffs(counts):
-        """counts[..., 8] -> the three differences used in (3) and (4)."""
-        def n(a=None, b=None, c=None):
-            return sum(counts[..., 4 * x + 2 * y + z] for x in (0, 1) for y in (0, 1) for z in (0, 1)
-                       if (a is None or x == a) and (b is None or y == b) and (c is None or z == c))
-        with np.errstate(divide="ignore", invalid="ignore"):
-            d2 = n(0, 1) / n(0) - n(1, 0) / n(1)
-            d3 = n(None, 0, 1) / n(None, 0) - n(None, 1, 0) / n(None, 1)
-            mk = n(1, 1, 1) / n(1, 1) - n(0, 1, 1) / n(0, 1)
-        return np.stack([d2, d3, mk], axis=-1)
-
-    def resample(tab, draws=200000, seed=20261123):
-        """Percentile intervals when the units are resampled with replacement (multinomial weights)."""
-        rng = np.random.default_rng(seed)
-        m = tab.shape[0]
-        out = []
-        for _ in range(draws // 10000):
-            w = rng.multinomial(m, np.ones(m) / m, size=10000).astype(float)
-            out.append(diffs(w @ tab))
-        out = np.concatenate(out)
-        return [np.percentile(col[np.isfinite(col)], [2.5, 97.5]) for col in out.T]
-
     tab = course_table(units)
     obs = diffs(tab.sum(axis=0))
-    labels = ("M(1|0) - M(0|1), 1530 -> 1560", "M(1|0) - M(0|1), 1560 -> 1600", "share staying Protestant to 1600: Protestant since 1530 minus changed after 1530")
-    for j, (lab, (lo, hi)) in enumerate(zip(labels, resample(tab))):
+    for j, (lab, (lo, hi)) in enumerate(zip(LABELS, resample(tab))):
         print(f"    {lab}: observed {obs[j]:+.4f}; 95% interval over resampled territories [{lo:+.3f}, {hi:+.3f}]")
     left = [(r["city"].strip('"'), r["territory"].strip('"')) for r in rows if g(r, "prot1560") == 1 and g(r, "prot1600") == 0]
     print(f"    cities coded Protestant in 1560 and not in 1600: {left}")
 
     print("(7) present-day countries")
-
-    def country(r):
-        name = r["currcountry"].strip('"').strip()
-        return "Italy" if name.endswith("Italy") else name
-
     by = collections.defaultdict(collections.Counter)
     for r in rows:
-        by[country(r)][(g(r, "prot1530"), g(r, "prot1560"), g(r, "prot1600"))] += 1
+        by[country(r)][course(r)] += 1
     single = sorted((k for k, v in by.items() if len(v) == 1), key=lambda k: -sum(by[k].values()))
     print(f"    countries: {len(by)}; countries all of whose cities share one course: {len(single)}, with {sum(sum(by[k].values()) for k in single)} cities")
     print("    " + ", ".join(f"{k} {''.join(map(str, next(iter(by[k]))))} ({sum(by[k].values())})" for k in single))
@@ -164,19 +202,64 @@ def main(path):
     def where(pred, label):
         cc = collections.Counter()
         for k, v in by.items():
-            n = sum(x for c3, x in v.items() if pred(c3))
-            if n:
-                cc[k] = n
-        print(f"    {label}: {sum(cc.values())} cities: " + ", ".join(f"{k} {n}" for k, n in cc.most_common()))
+            m = sum(x for c3, x in v.items() if pred(c3))
+            if m:
+                cc[k] = m
+        print(f"    {label}: {sum(cc.values())} cities: " + ", ".join(f"{k} {m}" for k, m in cc.most_common()))
 
     where(lambda c3: c3[0] == 1, "Protestant in 1530")
     where(lambda c3: c3[0] == 0 and c3[1] == 1, "0 -> 1, 1530 -> 1560")
     where(lambda c3: c3[1] == 0 and c3[2] == 1, "0 -> 1, 1560 -> 1600")
     where(lambda c3: c3[0] == 1 and c3[1] == 0, "1 -> 0, 1530 -> 1560")
     where(lambda c3: c3[1] == 1 and c3[2] == 0, "1 -> 0, 1560 -> 1600")
-    ctab = course_table({k: [c3 for c3, x in by[k].items() for _ in range(x)] for k in by})
-    for lab, (lo, hi) in list(zip(labels, resample(ctab)))[:2]:
+    ctab = course_table(country_units(rows))
+    for lab, (lo, hi) in list(zip(LABELS, resample(ctab)))[:2]:
         print(f"    {lab}: 95% interval over resampled countries [{lo:+.3f}, {hi:+.3f}]")
+
+    print("(8) the 753 cities analysed in the published article")
+    sub = [r for r in rows if r["pop1500"].strip() != "" and r["city"].strip('"').strip() not in ("Mainz", "Wittenberg", "Zürich")]
+    m = len(sub)
+    means = [sum(g(r, col) for r in sub) / m for col in ("prot1530", "prot1560", "prot1600", "press")]
+    print(f"    rows with a recorded population in 1500, without Mainz, Wittenberg and Zurich: {m}")
+    print("    means of prot1530, prot1560, prot1600, press: " + ", ".join(f"{x:.3f}" for x in means) + " (Table 1 of the article: 0.110, 0.292, 0.337, 0.234 for 753 cities)")
+    assert m == 753 and [round(x, 3) for x in means] == [0.110, 0.292, 0.337, 0.234]
+    sc = collections.Counter(course(r) for r in sub)
+    s = lambda a=None, b=None, d=None: sum(v for k, v in sc.items() if (a is None or k[0] == a) and (b is None or k[1] == b) and (d is None or k[2] == d))
+    print(f"    1517 -> 1530: 0 -> 1: {s(1)}/{m} = {s(1) / m:.4f}")
+    for name, (n01, n0, n10, n1) in (("1530 -> 1560", (s(0, 1), s(0), s(1, 0), s(1))),
+                                      ("1560 -> 1600", (s(None, 0, 1), s(None, 0), s(None, 1, 0), s(None, 1)))):
+        _, pp = fisher_exact([[n01, n0 - n01], [n10, n1 - n10]])
+        print(f"    {name}: 0 -> 1: {n01}/{n0} = {n01 / n0:.4f}; 1 -> 0: {n10}/{n1} = {n10 / n1:.4f}; Fisher exact two-sided p = {pp:.3e}")
+    _, pm = fisher_exact([[s(0, 1, 1), s(0, 1, 0)], [s(1, 1, 1), s(1, 1, 0)]])
+    print(f"    Markov property at 1560: Protestant in 1600 among those Protestant in 1560: changed after 1530: {s(0, 1, 1)}/{s(0, 1)}; "
+          f"Protestant since 1530: {s(1, 1, 1)}/{s(1, 1)}; Fisher exact two-sided p = {pm:.4f}")
+    stab, sctab = course_table(territory_units(sub)), course_table(country_units(sub))
+    sobs = diffs(stab.sum(axis=0))
+    for j, (lab, (lo, hi), (clo, chi)) in enumerate(zip(LABELS, resample(stab), resample(sctab))):
+        print(f"    {lab}: observed {sobs[j]:+.4f}; 95% interval over resampled territories ({stab.shape[0]} units) [{lo:+.3f}, {hi:+.3f}]"
+              + (f", over resampled countries ({sctab.shape[0]}) [{clo:+.3f}, {chi:+.3f}]" if j < 2 else ""))
+    for pr, (k, mm) in zip((1, 0), press_shares(sub)):
+        print(f"    press by 1500 = {pr}: Protestant in 1600: {k}/{mm} = {k / mm:.4f}")
+
+    print("(9) the estimation samples of the published article")
+    for col, target, clusters in (("prot1530", 200, 102), ("prot1560", 352, 157), ("prot1600", 307, 147)):
+        kept = list(sub)
+        dropped = []
+        changed = True
+        while changed:                    # leave out every nation or Imperial Circle whose cities all have the same code
+            changed = False
+            for d in NATIONS + CIRCLES:
+                grp = [r for r in kept if g(r, d) == 1]
+                if grp and len({g(r, col) for r in grp}) == 1:
+                    kept = [r for r in kept if g(r, d) == 0]
+                    dropped.append(f"{d} ({len(grp)}, code {g(grp[0], col)})")
+                    changed = True
+        nterr = len({r["territory"] for r in kept})
+        (kp, mp), (kn, mn) = press_shares(kept, col)
+        print(f"    {col}: {len(kept)} cities in {nterr} territories (article: {target} in {clusters}); "
+              f"press by 1500: {kp}/{mp} = {kp / mp:.4f}; no press: {kn}/{mn} = {kn / mn:.4f}")
+        print("        left out: " + ", ".join(dropped))
+        assert (len(kept), nterr) == (target, clusters)
 
 
 if __name__ == "__main__":
