@@ -5,12 +5,13 @@ Proposition 11 (what records determine):
         product of the transition matrices M_k, it is the same for all models with the same M_k
         (other phases of the accessibilities, other valuations; unitary and open steps), and it
         determines M_k on the reached configurations;
-  (ii)  graded records: P_kappa at |R|+1 values of kappa determines the coefficients F_d of
+  (ii)  unitary steps give doubly stochastic transition matrices (general channels do not);
+  (iii) graded records: P_kappa at |R|+1 values of kappa determines the coefficients F_d of
         P_kappa = sum_d kappa^d F_d (compared with the direct sums over pairs of paths);
-  (iii) reader's bound: the pointer overlap is at most the Bhattacharyya coefficient of the
+  (iv)  reader's bound: the pointer overlap is at most the Bhattacharyya coefficient of the
         distributions of any reading of the probes, with equality for the intermittent reading,
-        and a record that survives with probability s gives the coefficient 1 - s;
-  (iv)  unitary steps give doubly stochastic transition matrices (general channels do not).
+        and a record that reaches the reader with probability s gives the coefficient 1 - s.
+The blocks below are printed in the order (i), (iii), (iv), (ii).
 Also: across one recorded epoch P_kappa - P_0 = kappa (P_1 - P_0) (the defect of the
 Chapman-Kolmogorov relation is the interference term scaled by kappa), and the numbers quoted
 in the text for the reader's bound on the latitude.
@@ -140,7 +141,7 @@ report("open steps: law independent of valuations", max(abs(law_o1[p] - law_o2[p
 report("open steps: column sums of M_k equal one", max(abs(m.sum(axis=0) - 1).max() for m in M_open))
 
 # ---------------------------------------------------------------- (ii) graded records
-print("(ii) graded records determine the coefficients F_d")
+print("(iii) graded records determine the coefficients F_d")
 N, steps = 3, 4
 A = [haar(N) for _ in range(steps)]
 W = [A[k] @ np.diag(np.exp(1j * rng.uniform(0, 2 * np.pi, size=N))) for k in range(steps)]
@@ -187,7 +188,7 @@ for kap in (0.2, 0.7):
 report("interference term sums to zero", abs((P1 - ck).sum()))
 
 # ---------------------------------------------------------------- (iii) reader's bound
-print("(iii) reader's bound: overlap <= Bhattacharyya coefficient of any reading")
+print("(iv) reader's bound: overlap <= Bhattacharyya coefficient of any reading")
 worst = -1.0
 for trial in range(2000):
     ncat = int(rng.integers(2, 5))
@@ -232,7 +233,7 @@ print("       reader's bound on the latitude 1 - s^m for s = 0.683:", [round(1 -
 print("       coefficient for s = 0.090:", round(1 - 0.090, 3))
 
 # ---------------------------------------------------------------- (iv) double stochasticity
-print("(iv) unitary steps give doubly stochastic transition matrices")
+print("(ii) unitary steps give doubly stochastic transition matrices")
 worst_u = 0.0
 for _ in range(200):
     n = int(rng.integers(2, 7))

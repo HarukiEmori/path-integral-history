@@ -8,17 +8,25 @@ this repository; fetch it from the DOI and pass its path as the first argument.
 
 The script only counts.  It prints
   (1) the number of cities on each of the eight courses (x_1530, x_1560, x_1600),
-  (2) the transition frequencies of the three steps 1517 -> 1530 -> 1560 -> 1600,
+  (2) the transition frequencies of the steps 1530 -> 1560 -> 1600, and the share of cities coded
+      Protestant in 1530, which is the frequency of the step 1517 -> 1530 under the ASSUMPTION
+      that every city has the code 0 in 1517 (the data contain no code for 1517),
   (3) Fisher's exact test of the Markov property at 1560 (does the state in 1600 depend on the
       state in 1530, given the state in 1560?),
   (4) Fisher's exact test of M(1|0) = M(0|1), which is double stochasticity for two states,
-  (5) the shares of Protestant cities in 1600 with and without a press by 1500.
+  (5) the shares of Protestant cities in 1600 with and without a press by 1500,
+  (6) the territories of the cities (the cities of a territory are not independent observations)
+      and percentile intervals of the differences used in (3) and (4) when territories are
+      resampled with replacement in place of cities (10,000 draws, fixed seed; a city without a
+      territory in the data is its own unit).
 Run:  python -I reformation_chain.py /path/to/Printing_ReStat.tab
 """
+import collections
 import csv
 import math
 import sys
 
+import numpy as np
 from scipy.stats import fisher_exact
 
 
@@ -41,7 +49,7 @@ def main(path):
 
     print("(2) transition frequencies (0 = not Protestant, 1 = Protestant)")
     k1 = sum(v for k, v in cnt.items() if k[0] == 1)
-    print(f"    1517 -> 1530: 0 -> 1: {k1}/{n} = {k1 / n:.4f}")
+    print(f"    1517 -> 1530 (assuming the code 0 for every city in 1517): 0 -> 1: {k1}/{n} = {k1 / n:.4f}")
 
     def step(i, j):
         m = [[0, 0], [0, 0]]              # m[to][from]
@@ -85,6 +93,49 @@ def main(path):
         s = [r for r in rows if g(r, "press") == pr]
         k = sum(g(r, "prot1600") for r in s)
         print(f"    press by 1500 = {pr}: Protestant in 1600: {k}/{len(s)} = {k / len(s):.4f}")
+
+    print("(6) territories and resampling of territories")
+    units = collections.defaultdict(list)
+    for i, r in enumerate(rows):
+        name = r["territory"].strip('"').strip()
+        key = name if name else f"(no territory) {i}"
+        units[key].append((g(r, "prot1530"), g(r, "prot1560"), g(r, "prot1600")))
+    named = [k for k in units if not k.startswith("(no territory)")]
+    print(f"    territories named in the data: {len(named)}; cities without a territory: {len(units) - len(named)}; units: {len(units)}")
+    sizes = sorted((len(v) for v in units.values()), reverse=True)
+    print(f"    largest units: {sizes[:6]}; units with one city: {sum(1 for x in sizes if x == 1)}")
+
+    def diffs(sample):
+        cc = collections.Counter(sample)
+        n0_2 = sum(v for k, v in cc.items() if k[0] == 0)
+        n1_2 = sum(v for k, v in cc.items() if k[0] == 1)
+        n0_3 = sum(v for k, v in cc.items() if k[1] == 0)
+        n1_3 = sum(v for k, v in cc.items() if k[1] == 1)
+        new_n = cc[(0, 1, 1)] + cc[(0, 1, 0)]
+        old_n = cc[(1, 1, 1)] + cc[(1, 1, 0)]
+        if not (n0_2 and n1_2 and n0_3 and n1_3 and new_n and old_n):
+            return None
+        d2 = sum(v for k, v in cc.items() if k[0] == 0 and k[1] == 1) / n0_2 - sum(v for k, v in cc.items() if k[0] == 1 and k[1] == 0) / n1_2
+        d3 = sum(v for k, v in cc.items() if k[1] == 0 and k[2] == 1) / n0_3 - sum(v for k, v in cc.items() if k[1] == 1 and k[2] == 0) / n1_3
+        mk = cc[(1, 1, 1)] / old_n - cc[(0, 1, 1)] / new_n
+        return d2, d3, mk
+
+    keys = sorted(units)
+    obs = diffs([c3 for k in keys for c3 in units[k]])
+    rng = np.random.default_rng(20261123)
+    draws = []
+    while len(draws) < 10000:
+        pick = rng.integers(0, len(keys), size=len(keys))
+        d = diffs([c3 for i in pick for c3 in units[keys[i]]])
+        if d is not None:
+            draws.append(d)
+    draws = np.array(draws)
+    labels = ("M(1|0) - M(0|1), 1530 -> 1560", "M(1|0) - M(0|1), 1560 -> 1600", "share staying Protestant to 1600: Protestant since 1530 minus changed after 1530")
+    for j, lab in enumerate(labels):
+        lo, hi = np.percentile(draws[:, j], [2.5, 97.5])
+        print(f"    {lab}: observed {obs[j]:+.4f}; 95% interval over resampled territories [{lo:+.3f}, {hi:+.3f}]")
+    left = [(r["city"].strip('"'), r["territory"].strip('"')) for r in rows if g(r, "prot1560") == 1 and g(r, "prot1600") == 0]
+    print(f"    cities coded Protestant in 1560 and not in 1600: {left}")
 
 
 if __name__ == "__main__":
