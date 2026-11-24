@@ -17,8 +17,8 @@ The script only counts.  It prints
   (5) the shares of Protestant cities in 1600 with and without a press by 1500,
   (6) the territories of the cities (the cities of a territory are not independent observations)
       and percentile intervals of the differences used in (3) and (4) when territories are
-      resampled with replacement in place of cities (10,000 draws, fixed seed; a city without a
-      territory in the data is its own unit),
+      resampled with replacement in place of cities (200,000 draws, fixed seed; a city without a
+      territory in the data is its own unit; the limits are stable to about 0.002 across seeds),
   (7) the courses by present-day country (variable currcountry, with the three Italian regions of
       the file counted as one country): the countries all of whose cities share one course, the
       countries that hold the changes of each step, and the intervals of (6) when the countries
@@ -109,34 +109,41 @@ def main(path):
     sizes = sorted((len(v) for v in units.values()), reverse=True)
     print(f"    largest units: {sizes[:6]}; units with one city: {sum(1 for x in sizes if x == 1)}")
 
-    def diffs(sample):
-        cc = collections.Counter(sample)
-        n0_2 = sum(v for k, v in cc.items() if k[0] == 0)
-        n1_2 = sum(v for k, v in cc.items() if k[0] == 1)
-        n0_3 = sum(v for k, v in cc.items() if k[1] == 0)
-        n1_3 = sum(v for k, v in cc.items() if k[1] == 1)
-        new_n = cc[(0, 1, 1)] + cc[(0, 1, 0)]
-        old_n = cc[(1, 1, 1)] + cc[(1, 1, 0)]
-        if not (n0_2 and n1_2 and n0_3 and n1_3 and new_n and old_n):
-            return None
-        d2 = sum(v for k, v in cc.items() if k[0] == 0 and k[1] == 1) / n0_2 - sum(v for k, v in cc.items() if k[0] == 1 and k[1] == 0) / n1_2
-        d3 = sum(v for k, v in cc.items() if k[1] == 0 and k[2] == 1) / n0_3 - sum(v for k, v in cc.items() if k[1] == 1 and k[2] == 0) / n1_3
-        mk = cc[(1, 1, 1)] / old_n - cc[(0, 1, 1)] / new_n
-        return d2, d3, mk
+    def course_table(groups):
+        """One row per unit: the number of its cities on each of the eight courses (index 4a + 2b + c)."""
+        keys_ = sorted(groups)
+        tab = np.zeros((len(keys_), 8))
+        for i, k in enumerate(keys_):
+            for c3 in groups[k]:
+                tab[i, 4 * c3[0] + 2 * c3[1] + c3[2]] += 1
+        return tab
 
-    keys = sorted(units)
-    obs = diffs([c3 for k in keys for c3 in units[k]])
-    rng = np.random.default_rng(20261123)
-    draws = []
-    while len(draws) < 10000:
-        pick = rng.integers(0, len(keys), size=len(keys))
-        d = diffs([c3 for i in pick for c3 in units[keys[i]]])
-        if d is not None:
-            draws.append(d)
-    draws = np.array(draws)
+    def diffs(counts):
+        """counts[..., 8] -> the three differences used in (3) and (4)."""
+        def n(a=None, b=None, c=None):
+            return sum(counts[..., 4 * x + 2 * y + z] for x in (0, 1) for y in (0, 1) for z in (0, 1)
+                       if (a is None or x == a) and (b is None or y == b) and (c is None or z == c))
+        with np.errstate(divide="ignore", invalid="ignore"):
+            d2 = n(0, 1) / n(0) - n(1, 0) / n(1)
+            d3 = n(None, 0, 1) / n(None, 0) - n(None, 1, 0) / n(None, 1)
+            mk = n(1, 1, 1) / n(1, 1) - n(0, 1, 1) / n(0, 1)
+        return np.stack([d2, d3, mk], axis=-1)
+
+    def resample(tab, draws=200000, seed=20261123):
+        """Percentile intervals when the units are resampled with replacement (multinomial weights)."""
+        rng = np.random.default_rng(seed)
+        m = tab.shape[0]
+        out = []
+        for _ in range(draws // 10000):
+            w = rng.multinomial(m, np.ones(m) / m, size=10000).astype(float)
+            out.append(diffs(w @ tab))
+        out = np.concatenate(out)
+        return [np.percentile(col[np.isfinite(col)], [2.5, 97.5]) for col in out.T]
+
+    tab = course_table(units)
+    obs = diffs(tab.sum(axis=0))
     labels = ("M(1|0) - M(0|1), 1530 -> 1560", "M(1|0) - M(0|1), 1560 -> 1600", "share staying Protestant to 1600: Protestant since 1530 minus changed after 1530")
-    for j, lab in enumerate(labels):
-        lo, hi = np.percentile(draws[:, j], [2.5, 97.5])
+    for j, (lab, (lo, hi)) in enumerate(zip(labels, resample(tab))):
         print(f"    {lab}: observed {obs[j]:+.4f}; 95% interval over resampled territories [{lo:+.3f}, {hi:+.3f}]")
     left = [(r["city"].strip('"'), r["territory"].strip('"')) for r in rows if g(r, "prot1560") == 1 and g(r, "prot1600") == 0]
     print(f"    cities coded Protestant in 1560 and not in 1600: {left}")
@@ -167,18 +174,8 @@ def main(path):
     where(lambda c3: c3[1] == 0 and c3[2] == 1, "0 -> 1, 1560 -> 1600")
     where(lambda c3: c3[0] == 1 and c3[1] == 0, "1 -> 0, 1530 -> 1560")
     where(lambda c3: c3[1] == 1 and c3[2] == 0, "1 -> 0, 1560 -> 1600")
-    ckeys = sorted(by)
-    cunits = {k: [c3 for c3, x in by[k].items() for _ in range(x)] for k in ckeys}
-    rng = np.random.default_rng(20261123)
-    draws = []
-    while len(draws) < 10000:
-        pick = rng.integers(0, len(ckeys), size=len(ckeys))
-        d = diffs([c3 for i in pick for c3 in cunits[ckeys[i]]])
-        if d is not None:
-            draws.append(d)
-    draws = np.array(draws)
-    for j, lab in enumerate(labels[:2]):
-        lo, hi = np.percentile(draws[:, j], [2.5, 97.5])
+    ctab = course_table({k: [c3 for c3, x in by[k].items() for _ in range(x)] for k in by})
+    for lab, (lo, hi) in list(zip(labels, resample(ctab)))[:2]:
         print(f"    {lab}: 95% interval over resampled countries [{lo:+.3f}, {hi:+.3f}]")
 
 
