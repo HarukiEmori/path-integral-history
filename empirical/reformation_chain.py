@@ -26,7 +26,7 @@ The script only counts.  It prints
   (8) the same counts, tests and intervals for the 753 cities that the published article analyses
       (the rows with a recorded population in 1500, without Mainz, Wittenberg and Zurich, from
       which the article measures distances); the selection is checked against the means of
-      Table 1 of the article,
+      Table 3 of the article,
   (9) the estimation samples of the article (Tables 6 and 7: 200, 352 and 307 cities in 102, 157
       and 147 territories for 1530, 1560 and 1600), obtained from the 753 cities by leaving out
       every nation or Imperial Circle of the file whose cities all have the same code at the
@@ -221,7 +221,7 @@ def main(path):
     m = len(sub)
     means = [sum(g(r, col) for r in sub) / m for col in ("prot1530", "prot1560", "prot1600", "press")]
     print(f"    rows with a recorded population in 1500, without Mainz, Wittenberg and Zurich: {m}")
-    print("    means of prot1530, prot1560, prot1600, press: " + ", ".join(f"{x:.3f}" for x in means) + " (Table 1 of the article: 0.110, 0.292, 0.337, 0.234 for 753 cities)")
+    print("    means of prot1530, prot1560, prot1600, press: " + ", ".join(f"{x:.3f}" for x in means) + " (Table 3 of the article: 0.110, 0.292, 0.337, 0.234 for 753 cities)")
     assert m == 753 and [round(x, 3) for x in means] == [0.110, 0.292, 0.337, 0.234]
     sc = collections.Counter(course(r) for r in sub)
     s = lambda a=None, b=None, d=None: sum(v for k, v in sc.items() if (a is None or k[0] == a) and (b is None or k[1] == b) and (d is None or k[2] == d))

@@ -2,7 +2,8 @@
 (sharp records at all |R| = T-1 intermediate times). Also checks the mixture representation
 P_kappa = sum_S kappa^|S| (1-kappa)^{|R|-|S|} P_S, where P_S has coherence kept exactly at the times in S,
 and the second statement of the corollary: two choices of the valuations give distributions whose
-total-variation distance is at most 1-(1-kappa)^|R| (unitary steps and open steps with random Kraus operators)."""
+total-variation distance is at most 1-(1-kappa)^|R|, and at most 1-(1-max(kappa,kappa'))^|R| when the two
+choices also differ in the overlap (unitary steps and open steps with random Kraus operators)."""
 import itertools, numpy as np
 from theorem1_check import haar_unitary, P_channel, markov, rng
 def P_subset(W, x0, S):
@@ -59,6 +60,20 @@ for kind in ("unitary", "open"):
         if tv > bound + 1e-12: viol2 += 1
         if bound > 1e-9: worst2[kind] = max(worst2[kind], tv / bound)
 print("two valuations: violations of TV <= 1-(1-kappa)^|R|:", viol2, " max ratio: unitary %.3f, open %.3f" % (worst2["unitary"], worst2["open"]))
+# two choices of the valuations and of the overlap (Corollary 2 as stated in the revised manuscript): TV <= 1-(1-max(kappa,kappa'))^|R|
+viol3 = 0; worst3 = {"unitary": 0.0, "open": 0.0}
+for kind in ("unitary", "open"):
+    for trial in range(2000):
+        N = int(rng.integers(2, 5)); T = int(rng.integers(2, 5)); ka, kb = (float(z) for z in rng.uniform(0, 1, size=2))
+        if trial % 10 == 0: kb = 0.0          # one of the two records sharp
+        steps = [[haar_unitary(N)] if kind == "unitary" else kraus(N, 2) for _ in range(T)]
+        pa = P_two(steps, [rng.uniform(0, 2 * np.pi, size=N) for _ in range(T)], 0, ka)
+        pb = P_two(steps, [rng.uniform(0, 2 * np.pi, size=N) for _ in range(T)], 0, kb)
+        tv = 0.5 * np.abs(pa - pb).sum(); bound = 1 - (1 - max(ka, kb)) ** (T - 1)
+        if tv > bound + 1e-12: viol3 += 1
+        if bound > 1e-9: worst3[kind] = max(worst3[kind], tv / bound)
+print("two valuations and two overlaps: violations of TV <= 1-(1-max(kappa,kappa'))^|R|:", viol3, " max ratio: unitary %.3f, open %.3f" % (worst3["unitary"], worst3["open"]))
+assert viol2 == 0 and viol3 == 0
 # the bound is attained in the minimal example (N = 2, T = 2, Hadamard accessibility, valuation differences 0 and pi)
 H = np.array([[1, 1], [1, -1]]) / np.sqrt(2)
 for kappa in (0.2, 0.7, 1.0):

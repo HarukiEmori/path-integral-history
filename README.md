@@ -11,7 +11,7 @@ Python 3.11 or later with NumPy and SciPy. The emulation script needs pytket, py
 | Script | What it checks |
 | :-- | :-- |
 | `theorem1_check.py` | Recording theorem (Theorem 1): explicit probe simulation, channel composition, and the pair sum agree; corollaries (Markov chain at kappa = 0, zero sum of interference, blindness to the valuation, first-order term); unitarity of the quadratic kernel |
-| `tvbound_check.py` | Corollary 2: the total-variation bound, the mixture representation, and the bound for two choices of the valuations (unitary and open steps); imports from `theorem1_check.py` |
+| `tvbound_check.py` | Corollary 2: the total-variation bound, the mixture representation, and the bound for two choices of the valuations, with equal and with unequal overlaps (unitary and open steps); imports from `theorem1_check.py` |
 | `twostate_check.py` | Minimal example, visibility and distinguishability duality |
 | `mirror_check.py` | Far-field mirror (Propositions 2 and 3), the constants gamma_P (printed as c_P), a Fresnel illustration (not used in the manuscript) |
 | `nearfield_check.py` | Near-field statements: tail bound, central-zone constants, zone-plate bound (Proposition 4), lattice-continuum lemma (Lemma 1), tail of the lattice sum (Proposition 5; the sharper constant tested here is the classical Kusmin-Landau form, the manuscript uses the weaker self-contained bound of `expsum_lemma_check.py`) |
@@ -38,7 +38,7 @@ Every script exits with code 0 when all checks pass; the printed maximum discrep
   python -I empirical/reformation_chain.py /path/to/Printing_ReStat.tab
   ```
   The script prints the number of cities on each course (coded Protestant or not in 1530, 1560, 1600), the transition frequencies, Fisher's exact tests of the Markov property and of double stochasticity, the shares of Protestant cities with and without a printing press by 1500, the territories and present-day countries of the cities, and percentile intervals when territories or countries are resampled in place of cities (200,000 draws, fixed seed; the cities are not independent observations).
-  It repeats the counts, tests and intervals for the 753 cities that the article analyses (the selection is checked against the means of Table 1 of the article), and it reproduces the estimation samples of the article (200, 352 and 307 cities for 1530, 1560 and 1600) with the shares of Protestant cities with and without a press in each. These are the numbers of Secs. 9.2 and 9.5 of the manuscript.
+  It repeats the counts, tests and intervals for the 753 cities that the article analyses (the selection is checked against the means of Table 3 of the article), and it reproduces the estimation samples of the article (200, 352 and 307 cities for 1530, 1560 and 1600) with the shares of Protestant cities with and without a press in each. These are the numbers of Secs. 9.2 and 9.5 of the manuscript.
 - `pottery_latitude.py`: a toy application of Proposition 9 to recorded technical choices (after S. E. van der Leeuw, "Giving the potter a choice", 1993): variable elements of a pottery tradition as factors, archaeological visibility as local overlaps kappa_i, and the latitude of the valuation of the potter. The parameters are illustrative and are not estimated from data.
 
 ## Emulation (`emulation/`)
