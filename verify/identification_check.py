@@ -21,7 +21,12 @@ Also:
     stochastic transition frequencies; interference below the resolution of a record survives at
     kappa = 0; two valuations move the realised distribution by at most twice the latitude (and by
     at most 2(1 - zeta^|R|) when a record survives with probability zeta); the record leaves every
-    definite configuration unchanged and changes the later statistics of a superposition.
+    definite configuration unchanged and changes the later statistics of a superposition; a record
+    in another frame changes definite configurations; a unitary model of two units that act on one
+    another has pooled single-unit transition frequencies that are not doubly stochastic; a share
+    of surviving records that depends on the category gives the coefficient
+    sqrt((1 - zeta_a)(1 - zeta_b)), which can exceed one minus the pooled share; the direction
+    opened by selective removal keeps a positive probability after normalisation.
 
 Run: python identification_check.py   (exit code 0 if all checks pass)
 """
@@ -371,6 +376,64 @@ for kap_ in (0.0, 0.5, 1.0):
     ws = [perm[k] @ diag_unitary(n) for k in range(3)]
     dists.append(p_kappa_unitary(ws, 0, {1, 2}, kap_, np.arange(n)))
 report("permutation accessibilities: P_kappa independent of kappa and of the valuations", max(np.abs(dists[0] - dists[1]).max(), np.abs(dists[0] - dists[2]).max()))
+
+# a record in a frame other than the configuration frame changes definite configurations (N = 3, Fourier frame, kappa = 0)
+n = 3
+F = np.array([[np.exp(2j * np.pi * a * x / n) for a in range(n)] for x in range(n)]) / np.sqrt(n)   # columns: frame vectors
+rho = np.zeros((n, n), dtype=complex); rho[0, 0] = 1.0
+in_frame = F.conj().T @ rho @ F
+after = F @ np.diag(np.diag(in_frame)) @ F.conj().T
+report("sharp record in the Fourier frame sends |0><0| to 1/3", np.abs(after - np.eye(n) / n).max())
+for a in range(n):                                              # ... and leaves the states definite in its own frame unchanged
+    v = F[:, a]; r_a = np.outer(v, v.conj())
+    kept = F @ np.diag(np.diag(F.conj().T @ r_a @ F)) @ F.conj().T
+    report(f"the same record leaves the frame state {a} unchanged", np.abs(kept - r_a).max())
+
+# two units that act on one another: a unitary (permutation) step on the product set, each unit recorded sharply
+p1 = 0.105
+start = {(0, 0): (1 - p1) ** 2, (0, 1): (1 - p1) * p1, (1, 0): p1 * (1 - p1), (1, 1): p1 ** 2}   # after a first step R (x) R from (0, 0)
+perm = {(0, 0): (1, 1), (1, 1): (0, 0), (0, 1): (0, 1), (1, 0): (1, 0)}                           # exchange-symmetric permutation
+joint = np.zeros((4, 4))
+for s_, d_ in perm.items():
+    joint[2 * d_[0] + d_[1], 2 * s_[0] + s_[1]] = 1.0
+report("the joint transition matrix of the two units is doubly stochastic", max(np.abs(joint.sum(axis=0) - 1).max(), np.abs(joint.sum(axis=1) - 1).max()))
+num01 = den0 = num10 = den1 = 0.0
+for s_, w in start.items():
+    d_ = perm[s_]
+    for i in (0, 1):
+        if s_[i] == 0:
+            den0 += w; num01 += w * (d_[i] == 1)
+        else:
+            den1 += w; num10 += w * (d_[i] == 0)
+f01, f10 = num01 / den0, num10 / den1
+ok_pooled = abs(f01 - f10) > 0.5
+ok_all = ok_all and ok_pooled
+print(f"  {'ok ' if ok_pooled else 'FAIL'} pooled single-unit frequencies of the interacting pair are not doubly stochastic: 0 -> 1: {f01:.3f}, 1 -> 0: {f10:.3f}")
+
+# a share of surviving records that depends on the category
+za, zb, prior_a = 0.99, 0.0, 0.99
+p_a = np.array([1 - za, za, 0.0]); p_b = np.array([1 - zb, 0.0, zb])
+coeff = float(np.sum(np.sqrt(p_a * p_b)))
+report("category-dependent shares: coefficient equals sqrt((1 - zeta_a)(1 - zeta_b))", abs(coeff - np.sqrt((1 - za) * (1 - zb))))
+pooled = prior_a * za + (1 - prior_a) * zb
+ok_share = coeff > 1 - pooled
+ok_all = ok_all and ok_share
+print(f"  {'ok ' if ok_share else 'FAIL'} the coefficient {coeff:.3f} exceeds one minus the pooled share, {1 - pooled:.4f}")
+
+# selective removal (Proposition 3) with normalised states: probability of the direction q0 = 2 pi / P
+P_, J_ = 8, 4
+L_ = P_ * J_
+q0 = 2 * np.pi / P_
+Y = np.arange(1, L_ + 1)
+Yp = Y[np.cos(q0 * Y) > 1e-12]
+def prob(arr):
+    amp = np.exp(1j * q0 * arr).sum() / np.sqrt(len(arr)) / np.sqrt(L_)      # amplitude of the frequency q0 after a Fourier transform on L points
+    return abs(amp) ** 2
+gamma = 1 + 2 * sum(np.cos(2 * np.pi * m_ / P_) for m_ in range(1, (P_ - 1) // 4 + 1))
+mP = 2 * ((P_ - 1) // 4) + 1
+report("complete array: probability of the direction q0 is zero", prob(Y))
+report("after the removal: probability gamma_P^2 / (P m_P)", abs(prob(Yp) - gamma ** 2 / (P_ * mP)))
+print(f"       (P = 8: the probability rises from 0 to {prob(Yp):.3f}; the unnormalised fraction (gamma_P / P)^2 is {(gamma / P_) ** 2:.3f})")
 
 print("ALL PASS" if ok_all else "SOME CHECKS FAILED")
 sys.exit(0 if ok_all else 1)
