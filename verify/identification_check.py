@@ -19,8 +19,8 @@ Also:
   - the numbers quoted in the text for the reader's bound on the latitude;
   - statements of Secs. 9.2 and 9.4: a coarse record of a unitary model need not have doubly
     stochastic transition frequencies; interference below the resolution of a record survives at
-    kappa = 0; two valuations move the realised distribution by at most twice the latitude (and by
-    at most 2(1 - zeta^|R|) when a record survives with probability zeta); the record leaves every
+    kappa = 0; two valuations move the realised distribution by at most the latitude (Corollary 2;
+    by at most 1 - zeta^|R| when a record survives with probability zeta); the record leaves every
     definite configuration unchanged and changes the later statistics of a superposition; a record
     in another frame changes definite configurations; a unitary model of two units that act on one
     another has pooled single-unit transition frequencies that are not doubly stochastic; a share
@@ -335,7 +335,7 @@ report("valuation below the resolution, kappa = 0, phase 0: (0, 1, 0)", np.abs(o
 report("valuation below the resolution, kappa = 0, phase pi/2: (0, 1/2, 1/2)", np.abs(outs[1] - np.array([0, 0.5, 0.5])).max())
 report("valuation below the resolution, kappa = 0, phase pi: (0, 0, 1)", np.abs(outs[2] - np.array([0, 0, 1])).max())
 
-# two valuations, records of full resolution at every intermediate epoch: TV <= 2 (1 - (1 - kappa)^|R|)
+# two valuations, records of full resolution at every intermediate epoch: TV <= 1 - (1 - kappa)^|R| (Corollary 2)
 worst_ratio, worst_excess = 0.0, 0.0
 for _ in range(3000):
     n = int(rng.integers(2, 5)); st = int(rng.integers(2, 5))
@@ -348,13 +348,13 @@ for _ in range(3000):
         d.append(p_kappa_unitary(ws, 0, recs, kap, np.arange(n)))
     tv = 0.5 * np.abs(d[0] - d[1]).sum()
     lat = 1 - (1 - kap) ** len(recs)
-    worst_excess = max(worst_excess, tv - 2 * lat)
+    worst_excess = max(worst_excess, tv - lat)
     if lat > 1e-9:
         worst_ratio = max(worst_ratio, tv / lat)
-report("two valuations: TV - 2 (1 - (1 - kappa)^|R|) <= 0 over 3000 random models", max(worst_excess, 0.0))
+report("two valuations: TV - (1 - (1 - kappa)^|R|) <= 0 over 3000 random models", max(worst_excess, 0.0), 1e-12)
 print(f"       (largest ratio of TV to the latitude in these trials: {worst_ratio:.3f})")
 zeta, m_rec = 0.9, 2
-print(f"       (a record surviving with probability zeta = {zeta}, |R| = {m_rec}: kappa <= {1 - zeta:.2f}, bound 2 (1 - zeta^|R|) = {2 * (1 - zeta ** m_rec):.3f})")
+print(f"       (a record surviving with probability zeta = {zeta}, |R| = {m_rec}: kappa <= {1 - zeta:.2f}, bound 1 - zeta^|R| = {1 - zeta ** m_rec:.3f})")
 
 # the record leaves every definite configuration unchanged and changes the later statistics
 n = 4
