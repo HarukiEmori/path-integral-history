@@ -5,16 +5,23 @@ Proposition 11 (what records determine):
         product of the transition matrices M_k, it is the same for all models with the same M_k
         (other phases of the accessibilities, other valuations; unitary and open steps), and it
         determines M_k on the reached configurations;
-  (ii)  unitary steps give doubly stochastic transition matrices (general channels do not);
-  (iii) graded records: P_kappa at |R|+1 values of kappa determines the coefficients F_d of
+  (ii)  unitary steps give doubly stochastic transition matrices, and every stochastic matrix is
+        the matrix M_k of an open step (Kraus operators sqrt(M(x|y)) |x><y|);
+  (iii) graded records: P_kappa at |R|+1 known values of kappa determines the coefficients F_d of
         P_kappa = sum_d kappa^d F_d (compared with the direct sums over pairs of paths);
   (iv)  reader's bound: the pointer overlap is at most the Bhattacharyya coefficient of the
         distributions of any reading of the probes, with equality for the intermittent reading,
-        and a record that reaches the reader with probability s gives the coefficient 1 - s.
+        and a record that reaches the reader with probability zeta gives the coefficient 1 - zeta.
 The blocks below are printed in the order (i), (iii), (iv), (ii).
-Also: across one recorded epoch P_kappa - P_0 = kappa (P_1 - P_0) (the defect of the
-Chapman-Kolmogorov relation is the interference term scaled by kappa), and the numbers quoted
-in the text for the reader's bound on the latitude.
+Also:
+  - across one recorded epoch P_kappa - P_0 = kappa (P_1 - P_0) (the defect of the
+    Chapman-Kolmogorov relation is the interference term scaled by kappa);
+  - the numbers quoted in the text for the reader's bound on the latitude;
+  - statements of Secs. 9.2 and 9.4: a coarse record of a unitary model need not have doubly
+    stochastic transition frequencies; interference below the resolution of a record survives at
+    kappa = 0; two valuations move the realised distribution by at most twice the latitude (and by
+    at most 2(1 - zeta^|R|) when a record survives with probability zeta); the record leaves every
+    definite configuration unchanged and changes the later statistics of a superposition.
 
 Run: python identification_check.py   (exit code 0 if all checks pass)
 """
@@ -224,13 +231,13 @@ for a in range(ncat):
     eta[a, a + 1] = np.sqrt(1 - kap)
 p = eta ** 2
 report("intermittent reading: coefficient equals kappa", abs(np.sum(np.sqrt(p[0] * p[1])) - kap))
-# a sharp record (kappa = 0) that reaches the reader with probability s: coefficient 1 - s
-s = 0.683
-p_a = np.array([1 - s, s, 0.0])
-p_b = np.array([1 - s, 0.0, s])
-report("record surviving with probability s: coefficient 1 - s", abs(np.sum(np.sqrt(p_a * p_b)) - (1 - s)))
-print("       reader's bound on the latitude 1 - s^m for s = 0.683:", [round(1 - s ** m, 3) for m in (1, 2, 3, 5)])
-print("       coefficient for s = 0.090:", round(1 - 0.090, 3))
+# a sharp record (kappa = 0) that reaches the reader with probability zeta: coefficient 1 - zeta
+zeta = 0.683
+p_a = np.array([1 - zeta, zeta, 0.0])
+p_b = np.array([1 - zeta, 0.0, zeta])
+report("record surviving with probability zeta: coefficient 1 - zeta", abs(np.sum(np.sqrt(p_a * p_b)) - (1 - zeta)))
+print("       reader's bound on the latitude 1 - zeta^m for zeta = 0.683:", [round(1 - zeta ** m, 3) for m in (1, 2, 3, 5)])
+print("       coefficient for zeta = 0.090:", round(1 - 0.090, 3))
 
 # ---------------------------------------------------------------- (iv) double stochasticity
 print("(ii) unitary steps give doubly stochastic transition matrices")
@@ -246,6 +253,124 @@ print(f"       (a random channel: row sums {np.round(m_open.sum(axis=1), 3).toli
 a, b = 0.191, 0.011
 m2 = np.array([[1 - a, b], [a, 1 - b]])
 print(f"       (two states with M(1|0) = {a}, M(0|1) = {b}: row sums {np.round(m2.sum(axis=1), 3).tolist()})")
+
+# every stochastic matrix is the matrix M_k of an open step
+worst_k, worst_m, worst_law = 0.0, 0.0, 0.0
+for _ in range(100):
+    n = int(rng.integers(2, 5))
+    Ms = []
+    krs = []
+    for k in range(3):
+        m = rng.uniform(size=(n, n))
+        m = m / m.sum(axis=0, keepdims=True)                 # columns sum to one: M(x|y)
+        kr = []
+        for x in range(n):
+            for y in range(n):
+                K = np.zeros((n, n))
+                K[x, y] = np.sqrt(m[x, y])
+                kr.append(K)
+        worst_k = max(worst_k, np.abs(sum(K.T @ K for K in kr) - np.eye(n)).max())
+        for y in range(n):
+            rho = np.zeros((n, n)); rho[y, y] = 1.0
+            out = sum(K @ rho @ K.T for K in kr)
+            worst_m = max(worst_m, np.abs(np.diag(out) - m[:, y]).max())
+        Ms.append(m); krs.append(kr)
+    # complete chronicle with these steps and arbitrary valuation phases: the Markov chain with the matrices M_k
+    phases = [rng.uniform(0, 2 * np.pi, size=n) for _ in range(3)]
+    for path in itertools.product(range(n), repeat=3):
+        pr, prev = 1.0, 0
+        for k, x in enumerate(path):
+            pr *= sum(abs((K @ np.diag(np.exp(1j * phases[k])))[x, prev]) ** 2 for K in krs[k])
+            prev = x
+        chain = np.prod([Ms[k][path[k], (0 if k == 0 else path[k - 1])] for k in range(3)])
+        worst_law = max(worst_law, abs(pr - chain))
+report("stochastic M: the operators sqrt(M(x|y)) |x><y| satisfy sum K^dagger K = 1", worst_k)
+report("stochastic M: <x| A(|y><y|) |x> = M(x|y)", worst_m)
+report("stochastic M: complete chronicle of the open steps = Markov chain with M_k", worst_law)
+
+# ---------------------------------------------------------------- statements of Secs. 9.2 and 9.4
+print("Secs. 9.2 and 9.4")
+
+
+def rot(n, i, j, prob):
+    """Real rotation in the plane (i, j) that moves the weight `prob` from i to j."""
+    u = np.eye(n)
+    c, s_ = np.sqrt(1 - prob), np.sqrt(prob)
+    u[i, i], u[j, j], u[j, i], u[i, j] = c, c, s_, -s_
+    return u
+
+
+# a coarse record of a unitary model: X = {0, 1, 2}, categories (0, 1, 1), kappa = 0
+cats3 = np.array([0, 1, 1])
+W1c, W2c = rot(3, 0, 2, 0.105), rot(3, 0, 1, 0.191)
+rho = np.zeros((3, 3)); rho[0, 0] = 1.0
+rho = dephase(W1c @ rho @ W1c.T, cats3)                       # sharp record of the category after step 1
+p_cat1 = rho[1, 1] + rho[2, 2]
+joint = np.zeros((2, 2))                                      # joint[b, a]: category a after step 1, b after step 2
+for a_cat in (0, 1):
+    proj = np.diag((cats3 == a_cat).astype(float))
+    cond = proj @ rho @ proj
+    after = W2c @ cond @ W2c.T
+    joint[0, a_cat] = after[0, 0]
+    joint[1, a_cat] = after[1, 1] + after[2, 2]
+f01 = joint[1, 0] / joint[:, 0].sum()
+f10 = joint[0, 1] / joint[:, 1].sum()
+report("coarse record of unitary steps: frequency 0 -> 1 equals 0.191", abs(f01 - 0.191))
+report("coarse record of unitary steps: frequency 1 -> 0 equals 0", abs(f10))
+print(f"       (first step 0 -> 1: {p_cat1:.3f}; the coarse transition frequencies {f01:.3f} and {f10:.3f} are not doubly stochastic)")
+
+# interference below the resolution survives at kappa = 0
+A1s = np.zeros((3, 3)); A1s[:, 0] = [0, 1 / np.sqrt(2), 1 / np.sqrt(2)]; A1s[:, 1] = [0, 1 / np.sqrt(2), -1 / np.sqrt(2)]; A1s[:, 2] = [1, 0, 0]
+A2s = np.eye(3); A2s[1:, 1:] = np.array([[1, 1], [1, -1]]) / np.sqrt(2)
+outs = []
+for phi in (0.0, np.pi / 2, np.pi):
+    V = np.diag([1, 1, np.exp(1j * phi)])
+    outs.append(p_kappa_unitary([A1s, A2s @ V], 0, {1}, 0.0, cats3))
+report("valuation below the resolution, kappa = 0, phase 0: (0, 1, 0)", np.abs(outs[0] - np.array([0, 1, 0])).max())
+report("valuation below the resolution, kappa = 0, phase pi/2: (0, 1/2, 1/2)", np.abs(outs[1] - np.array([0, 0.5, 0.5])).max())
+report("valuation below the resolution, kappa = 0, phase pi: (0, 0, 1)", np.abs(outs[2] - np.array([0, 0, 1])).max())
+
+# two valuations, records of full resolution at every intermediate epoch: TV <= 2 (1 - (1 - kappa)^|R|)
+worst_ratio, worst_excess = 0.0, 0.0
+for _ in range(3000):
+    n = int(rng.integers(2, 5)); st = int(rng.integers(2, 5))
+    acc = [haar(n) for _ in range(st)]
+    kap = float(rng.uniform(0, 1))
+    recs = set(range(1, st))
+    d = []
+    for _v in range(2):
+        ws = [acc[k] @ np.diag(np.exp(1j * rng.uniform(0, 2 * np.pi, size=n))) for k in range(st)]
+        d.append(p_kappa_unitary(ws, 0, recs, kap, np.arange(n)))
+    tv = 0.5 * np.abs(d[0] - d[1]).sum()
+    lat = 1 - (1 - kap) ** len(recs)
+    worst_excess = max(worst_excess, tv - 2 * lat)
+    if lat > 1e-9:
+        worst_ratio = max(worst_ratio, tv / lat)
+report("two valuations: TV - 2 (1 - (1 - kappa)^|R|) <= 0 over 3000 random models", max(worst_excess, 0.0))
+print(f"       (largest ratio of TV to the latitude in these trials: {worst_ratio:.3f})")
+zeta, m_rec = 0.9, 2
+print(f"       (a record surviving with probability zeta = {zeta}, |R| = {m_rec}: kappa <= {1 - zeta:.2f}, bound 2 (1 - zeta^|R|) = {2 * (1 - zeta ** m_rec):.3f})")
+
+# the record leaves every definite configuration unchanged and changes the later statistics
+n = 4
+kap = 0.3
+worst_def = 0.0
+for cats_ in (np.arange(n), np.array([0, 0, 1, 1])):
+    for x in range(n):
+        rho = np.zeros((n, n)); rho[x, x] = 1.0
+        worst_def = max(worst_def, np.abs(kap * rho + (1 - kap) * dephase(rho, cats_) - rho).max())
+report("the record channel leaves every definite configuration unchanged", worst_def)
+Wa, Wb = haar(n) @ diag_unitary(n), haar(n) @ diag_unitary(n)
+with_rec = p_kappa_unitary([Wa, Wb], 0, {1}, 0.0, np.arange(n))
+without = p_kappa_unitary([Wa, Wb], 0, {1}, 1.0, np.arange(n))
+print(f"       (a sharp record of the intermediate epoch moves the later distribution by TV = {0.5 * np.abs(with_rec - without).sum():.3f})")
+# permutation accessibilities: no dependence on kappa or on the valuations
+perm = [np.eye(n)[:, rng.permutation(n)] for _ in range(3)]
+dists = []
+for kap_ in (0.0, 0.5, 1.0):
+    ws = [perm[k] @ diag_unitary(n) for k in range(3)]
+    dists.append(p_kappa_unitary(ws, 0, {1, 2}, kap_, np.arange(n)))
+report("permutation accessibilities: P_kappa independent of kappa and of the valuations", max(np.abs(dists[0] - dists[1]).max(), np.abs(dists[0] - dists[2]).max()))
 
 print("ALL PASS" if ok_all else "SOME CHECKS FAILED")
 sys.exit(0 if ok_all else 1)

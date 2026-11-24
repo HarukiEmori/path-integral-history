@@ -18,7 +18,11 @@ The script only counts.  It prints
   (6) the territories of the cities (the cities of a territory are not independent observations)
       and percentile intervals of the differences used in (3) and (4) when territories are
       resampled with replacement in place of cities (10,000 draws, fixed seed; a city without a
-      territory in the data is its own unit).
+      territory in the data is its own unit),
+  (7) the courses by present-day country (variable currcountry, with the three Italian regions of
+      the file counted as one country): the countries all of whose cities share one course, the
+      countries that hold the changes of each step, and the intervals of (6) when the countries
+      are resampled in place of the territories.
 Run:  python -I reformation_chain.py /path/to/Printing_ReStat.tab
 """
 import collections
@@ -136,6 +140,46 @@ def main(path):
         print(f"    {lab}: observed {obs[j]:+.4f}; 95% interval over resampled territories [{lo:+.3f}, {hi:+.3f}]")
     left = [(r["city"].strip('"'), r["territory"].strip('"')) for r in rows if g(r, "prot1560") == 1 and g(r, "prot1600") == 0]
     print(f"    cities coded Protestant in 1560 and not in 1600: {left}")
+
+    print("(7) present-day countries")
+
+    def country(r):
+        name = r["currcountry"].strip('"').strip()
+        return "Italy" if name.endswith("Italy") else name
+
+    by = collections.defaultdict(collections.Counter)
+    for r in rows:
+        by[country(r)][(g(r, "prot1530"), g(r, "prot1560"), g(r, "prot1600"))] += 1
+    single = sorted((k for k, v in by.items() if len(v) == 1), key=lambda k: -sum(by[k].values()))
+    print(f"    countries: {len(by)}; countries all of whose cities share one course: {len(single)}, with {sum(sum(by[k].values()) for k in single)} cities")
+    print("    " + ", ".join(f"{k} {''.join(map(str, next(iter(by[k]))))} ({sum(by[k].values())})" for k in single))
+
+    def where(pred, label):
+        cc = collections.Counter()
+        for k, v in by.items():
+            n = sum(x for c3, x in v.items() if pred(c3))
+            if n:
+                cc[k] = n
+        print(f"    {label}: {sum(cc.values())} cities: " + ", ".join(f"{k} {n}" for k, n in cc.most_common()))
+
+    where(lambda c3: c3[0] == 1, "Protestant in 1530")
+    where(lambda c3: c3[0] == 0 and c3[1] == 1, "0 -> 1, 1530 -> 1560")
+    where(lambda c3: c3[1] == 0 and c3[2] == 1, "0 -> 1, 1560 -> 1600")
+    where(lambda c3: c3[0] == 1 and c3[1] == 0, "1 -> 0, 1530 -> 1560")
+    where(lambda c3: c3[1] == 1 and c3[2] == 0, "1 -> 0, 1560 -> 1600")
+    ckeys = sorted(by)
+    cunits = {k: [c3 for c3, x in by[k].items() for _ in range(x)] for k in ckeys}
+    rng = np.random.default_rng(20261123)
+    draws = []
+    while len(draws) < 10000:
+        pick = rng.integers(0, len(ckeys), size=len(ckeys))
+        d = diffs([c3 for i in pick for c3 in cunits[ckeys[i]]])
+        if d is not None:
+            draws.append(d)
+    draws = np.array(draws)
+    for j, lab in enumerate(labels[:2]):
+        lo, hi = np.percentile(draws[:, j], [2.5, 97.5])
+        print(f"    {lab}: 95% interval over resampled countries [{lo:+.3f}, {hi:+.3f}]")
 
 
 if __name__ == "__main__":
